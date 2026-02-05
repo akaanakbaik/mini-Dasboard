@@ -1,10 +1,14 @@
 import { Server, Socket } from 'socket.io'
 import { SSHInstance } from '../services/ssh-instance.js'
 import { decryptCredential } from '../lib/security.js'
+import { FileSystemHandler } from '../handlers/fs-handler.js'
+import { ProcessHandler } from '../handlers/pm2-handler.js'
 
 export class SocketManager {
   private ssh: SSHInstance
   private monitorInterval: NodeJS.Timeout | null = null
+  private fsHandler: FileSystemHandler | null = null
+  private pm2Handler: ProcessHandler | null = null
 
   constructor(private io: Server, private socket: Socket) {
     this.ssh = new SSHInstance()
@@ -14,12 +18,10 @@ export class SocketManager {
   private setupListeners() {
     this.socket.on('ssh:connect', async (payload) => {
       try {
-        console.log(`Connecting to ${payload.host}...`)
+        console.log(`\x1b[33m[→] Connection Request: ${payload.username}@${payload.host}\x1b[0m`)
         
-        // 1. Decrypt password yang dikirim dari Frontend/DB
         const password = await decryptCredential(payload.encryptedPassword)
         
-        // 2. Init SSH Connection
         await this.ssh.connect({
           host: payload.host,
           port: payload.port,
@@ -28,11 +30,18 @@ export class SocketManager {
         })
 
         this.socket.emit('ssh:status', { status: 'connected' })
+        
+        // Initialize Sub-Handlers (The Core Logic)
+        this.fsHandler = new FileSystemHandler(this.socket, this.ssh)
+        this.pm2Handler = new ProcessHandler(this.socket, this.ssh)
+        
         this.startResourceMonitor()
         this.setupTerminal()
+        
+        console.log(`\x1b[32m[✓] Session Ready for ${this.socket.id}\x1b[0m`)
 
       } catch (error: any) {
-        console.error('Connection Error:', error.message)
+        console.error('Connection Failed:', error.message)
         this.socket.emit('ssh:error', { message: error.message })
       }
     })
@@ -46,16 +55,13 @@ export class SocketManager {
     try {
       const client = this.ssh.getClient()
       
-      // Setup PTY Shell (xterm compatible)
       client.shell({ term: 'xterm-256color', cols: 80, rows: 24 }, (err, stream) => {
         if (err) return this.socket.emit('term:error', { message: err.message })
 
-        // Backend -> Frontend (Output Terminal)
         stream.on('data', (data: Buffer) => {
           this.socket.emit('term:output', data.toString())
         })
 
-        // Frontend -> Backend (Input Keyboard)
         this.socket.on('term:input', (data: string) => {
           stream.write(data)
         })
@@ -65,15 +71,13 @@ export class SocketManager {
         })
       })
     } catch (error) {
-      console.log('Terminal setup failed', error)
+      // Ignored if SSH disconnects early
     }
   }
 
   private startResourceMonitor() {
-    // Polling ringan setiap 2 detik untuk status CPU/RAM
     this.monitorInterval = setInterval(async () => {
       try {
-        // Command efisien untuk grab CPU & RAM
         const cmd = `top -bn1 | grep "Cpu(s)" | awk '{print $2 + $4}' && free -m | grep Mem | awk '{print $3 " " $2}'`
         const result = await this.ssh.exec(cmd)
         const [cpu, ramRaw] = result.split('\n')
@@ -88,7 +92,7 @@ export class SocketManager {
           }
         })
       } catch (e) {
-        // Ignore minor polling errors
+        // Silent fail for polling
       }
     }, 2000)
   }
@@ -96,6 +100,6 @@ export class SocketManager {
   private cleanup() {
     if (this.monitorInterval) clearInterval(this.monitorInterval)
     this.ssh.disconnect()
-    console.log(`Client Disconnected: ${this.socket.id}`)
+    console.log(`\x1b[31m[x] Client Disconnected: ${this.socket.id}\x1b[0m`)
   }
 }
