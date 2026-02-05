@@ -3,13 +3,23 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+  },
+  db: {
+    schema: 'public',
+  },
+});
 
-export type DbResult<T> = T extends PromiseLike<infer U> ? U : never;
-
-export const DB_TABLES = {
-  USERS: 'users',
-  VPS_PROFILES: 'vps_profiles',
-  SESSIONS: 'sessions',
-  LOGS: 'audit_logs'
-} as const;
+export type VPSProfile = {
+  id: string;
+  name: string;
+  ip_address: string;
+  username: string;
+  encrypted_password?: string;
+  port: number;
+  working_dir: string;
+  created_at: string;
+};
