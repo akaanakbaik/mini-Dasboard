@@ -10,8 +10,8 @@ module.exports = {
       env: {
         NODE_ENV: "production",
         PORT: 3001,
-        // Masukkan secret key yang sama dengan di Frontend untuk decrypt
-        SSH_ENCRYPT_SECRET: "isi-dengan-secret-key-32-byte-anda-wajib-sama" 
+        // Key ini WAJIB SAMA dengan yang ada di file .env frontend
+        SSH_ENCRYPT_SECRET: "826fae3e6bc72b4aaebbbc2056ba1a37" 
       }
     }
   ]
